@@ -18,6 +18,8 @@ typedef struct {
 typedef enum {
   EXECUTE_SUCCESS,
   EXECUTE_DUPLICATE_KEY,
+  EXECUTE_TABLE_FULL, // Not used in delete, but good to have
+  EXECUTE_NOT_FOUND, // For delete operation
 } ExecuteResult;
 
 typedef enum {
@@ -33,7 +35,7 @@ typedef enum {
   PREPARE_UNRECOGNIZED_STATEMENT
 } PrepareResult;
 
-typedef enum { STATEMENT_INSERT, STATEMENT_SELECT } StatementType;
+typedef enum { STATEMENT_INSERT, STATEMENT_SELECT, STATEMENT_DELETE } StatementType;
 
 #define COLUMN_USERNAME_SIZE 32
 #define COLUMN_EMAIL_SIZE 255
@@ -46,6 +48,7 @@ typedef struct {
 typedef struct {
   StatementType type;
   Row row_to_insert;  // only used by insert statement
+  uint32_t row_id_to_delete; // only used by delete statement
 } Statement;
 
 #define size_of_attribute(Struct, Attribute) sizeof(((Struct*)0)->Attribute)
@@ -346,7 +349,7 @@ void initialize_internal_node(void* node) {
   set_node_root(node, false);
   *internal_node_num_keys(node) = 0;
   /*
-  Necessary because the root page number is 0; by not initializing an internal 
+  Necessary because the root page number is 0; by not initializing an internal
   node's right child to an invalid page number when initializing the node, we may
   end up with 0 as the node's right child, which makes the node a parent of the root
   */
@@ -649,6 +652,26 @@ PrepareResult prepare_insert(InputBuffer* input_buffer, Statement* statement) {
   return PREPARE_SUCCESS;
 }
 
+PrepareResult prepare_delete(InputBuffer* input_buffer, Statement* statement) {
+    statement->type = STATEMENT_DELETE;
+
+    char* keyword = strtok(input_buffer->buffer, " ");
+    char* id_string = strtok(NULL, " ");
+
+    if (id_string == NULL) {
+        return PREPARE_SYNTAX_ERROR;
+    }
+
+    int id = atoi(id_string);
+    if (id < 0) {
+        return PREPARE_NEGATIVE_ID;
+    }
+
+    statement->row_id_to_delete = id;
+    return PREPARE_SUCCESS;
+}
+
+
 PrepareResult prepare_statement(InputBuffer* input_buffer,
                                 Statement* statement) {
   if (strncmp(input_buffer->buffer, "insert", 6) == 0) {
@@ -657,6 +680,9 @@ PrepareResult prepare_statement(InputBuffer* input_buffer,
   if (strcmp(input_buffer->buffer, "select") == 0) {
     statement->type = STATEMENT_SELECT;
     return PREPARE_SUCCESS;
+  }
+  if (strncmp(input_buffer->buffer, "delete", 6) == 0) {
+      return prepare_delete(input_buffer, statement);
   }
 
   return PREPARE_UNRECOGNIZED_STATEMENT;
@@ -781,7 +807,7 @@ void internal_node_split_and_insert(Table* table, uint32_t parent_page_num,
   void* old_node = get_page(table->pager,parent_page_num);
   uint32_t old_max = get_node_max_key(table->pager, old_node);
 
-  void* child = get_page(table->pager, child_page_num); 
+  void* child = get_page(table->pager, child_page_num);
   uint32_t child_max = get_node_max_key(table->pager, child);
 
   uint32_t new_page_num = get_unused_page_num(table->pager);
@@ -818,7 +844,7 @@ void internal_node_split_and_insert(Table* table, uint32_t parent_page_num,
     new_node = get_page(table->pager, new_page_num);
     initialize_internal_node(new_node);
   }
-  
+
   uint32_t* old_num_keys = internal_node_num_keys(old_node);
 
   uint32_t cur_page_num = *internal_node_right_child(old_node);
@@ -973,6 +999,29 @@ ExecuteResult execute_insert(Statement* statement, Table* table) {
   return EXECUTE_SUCCESS;
 }
 
+ExecuteResult execute_delete(Statement* statement, Table* table) {
+    uint32_t key_to_delete = statement->row_id_to_delete;
+    Cursor* cursor = table_find(table, key_to_delete);
+    void* node = get_page(table->pager, cursor->page_num);
+    uint32_t num_cells = *leaf_node_num_cells(node);
+
+    if (cursor->cell_num >= num_cells || *leaf_node_key(node, cursor->cell_num) != key_to_delete) {
+        free(cursor);
+        return EXECUTE_NOT_FOUND; // Or you can consider it success as nothing to delete
+    }
+
+    // Delete the cell and shift subsequent cells
+    for (uint32_t i = cursor->cell_num; i < num_cells - 1; i++) {
+        memcpy(leaf_node_cell(node, i), leaf_node_cell(node, i + 1), LEAF_NODE_CELL_SIZE);
+    }
+
+    // Decrement cell count
+    *(leaf_node_num_cells(node)) -= 1;
+    free(cursor);
+    return EXECUTE_SUCCESS;
+}
+
+
 ExecuteResult execute_select(Statement* statement, Table* table) {
   Cursor* cursor = table_start(table);
 
@@ -994,6 +1043,8 @@ ExecuteResult execute_statement(Statement* statement, Table* table) {
       return execute_insert(statement, table);
     case (STATEMENT_SELECT):
       return execute_select(statement, table);
+    case (STATEMENT_DELETE):
+        return execute_delete(statement, table);
   }
 }
 
@@ -1047,6 +1098,9 @@ int main(int argc, char* argv[]) {
       case (EXECUTE_DUPLICATE_KEY):
         printf("Error: Duplicate key.\n");
         break;
-    }
+      case (EXECUTE_NOT_FOUND):
+          printf("Error: Key not found.\n");
+          break;
+  }
   }
 }
