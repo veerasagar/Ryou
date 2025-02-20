@@ -1,5 +1,7 @@
 # Ryou - A Simple Database
 
+## Using C
+
 To run database
 
 ```
@@ -34,4 +36,29 @@ To exit
 
 ```
 db > .exit
+```
+## Using Rust
+
+To run
+
+```
+cd Rust\database
+```
+
+```
+cargo build
+cargo run
+```
+
+```
+Enter database name:
+mydatabase
+Using database: mydatabase.db
+B+ Tree Database (Order 4)
+Commands:
+  insert <key> <value>  - Insert a new record
+  select                - List all records
+  select <key>          - Find specific record
+  delete <key>          - Delete a record
+  exit                  - Quit the program
 ```
