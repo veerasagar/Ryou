@@ -1,0 +1,1 @@
+cd ./Rust/database && cargo run
