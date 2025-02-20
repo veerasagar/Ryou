@@ -1,429 +1,225 @@
-use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io;
 
-const PAGE_SIZE: usize = 4096;
-const TABLE_MAX_PAGES: usize = 400;
-const ID_SIZE: usize = 4;
-const USERNAME_SIZE: usize = 32;
-const EMAIL_SIZE: usize = 255;
-const ROW_SIZE: usize = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+const ORDER: usize = 4; // B+ tree order
 
-#[derive(Debug)]
-enum ExecuteResult {
-    Success,
-    DuplicateKey,
-    TableFull,
-    NotFound,
+#[derive(Debug, Clone)]
+struct Record {
+    key: i32,
+    value: String,
 }
 
-#[derive(Debug)]
-enum PrepareResult {
-    Success,
-    NegativeId,
-    StringTooLong,
-    SyntaxError,
-    UnrecognizedStatement,
+#[derive(Clone)]
+struct Node {
+    keys: Vec<i32>,
+    children: Vec<Node>,
+    records: Vec<Record>,
+    is_leaf: bool,
+    next: Option<Box<Node>>,
 }
 
-#[derive(Debug)]
-enum StatementType {
-    Insert,
-    Select,
-    Delete,
-}
-
-#[derive(Debug)]
-struct Row {
-    id: u32,
-    username: [u8; USERNAME_SIZE + 1],
-    email: [u8; EMAIL_SIZE + 1],
-}
-
-#[derive(Debug)]
-struct Statement {
-    stype: StatementType,
-    row_to_insert: Row,
-    row_id_to_delete: u32,
-}
-
-#[derive(Debug)]
-struct Pager {
-    file: File,
-    file_length: u64,
-    num_pages: u32,
-    pages: Vec<Option<Box<[u8; PAGE_SIZE]>>>,
-}
-
-impl Pager {
-    fn new(filename: &str) -> io::Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(filename)?;
-
-        let file_length = file.metadata()?.len();
-        let num_pages = (file_length / PAGE_SIZE as u64) as u32;
-        let mut pages = vec![None; TABLE_MAX_PAGES];
-
-        if file_length == 0 {
-            let mut page = Box::new([0u8; PAGE_SIZE]);
-            initialize_leaf_node(&mut page);
-            pages[0] = Some(page);
-        }
-
-        Ok(Pager {
-            file,
-            file_length,
-            num_pages,
-            pages,
-        })
-    }
-
-    fn get_page(&mut self, page_num: usize) -> io::Result<&mut [u8; PAGE_SIZE]> {
-        if page_num >= TABLE_MAX_PAGES {
-            panic!("Page number out of bounds");
-        }
-
-        if self.pages[page_num].is_none() {
-            let mut page = Box::new([0u8; PAGE_SIZE]);
-            let offset = page_num as u64 * PAGE_SIZE as u64;
-
-            if offset < self.file_length {
-                self.file.seek(SeekFrom::Start(offset))?;
-                self.file.read_exact(&mut *page)?;
-            }
-
-            self.pages[page_num] = Some(page);
-        }
-
-        Ok(self.pages[page_num].as_mut().unwrap())
-    }
-
-    fn flush_page(&mut self, page_num: usize) -> io::Result<()> {
-        if let Some(page) = &self.pages[page_num] {
-            let offset = page_num as u64 * PAGE_SIZE as u64;
-            self.file.seek(SeekFrom::Start(offset))?;
-            self.file.write_all(&**page)?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct Table {
-    pager: Pager,
-    root_page_num: usize,
-}
-
-impl Table {
-    fn new(filename: &str) -> io::Result<Self> {
-        let pager = Pager::new(filename)?;
-        Ok(Table {
-            pager,
-            root_page_num: 0,
-        })
-    }
-
-    fn start(&mut self) -> Cursor {
-        let root_page_num = self.root_page_num;
-        Cursor {
-            table: self,
-            page_num: root_page_num,
-            cell_num: 0,
-            end_of_table: false,
+impl Node {
+    fn new_leaf() -> Self {
+        Node {
+            keys: Vec::new(),
+            children: Vec::new(),
+            records: Vec::new(),
+            is_leaf: true,
+            next: None,
         }
     }
 
-    fn find(&mut self, key: u32) -> Cursor {
-        let root_page_num = self.root_page_num;
-        Cursor {
-            table: self,
-            page_num: root_page_num,
-            cell_num: 0,
-            end_of_table: false,
+    fn new_internal() -> Self {
+        Node {
+            keys: Vec::new(),
+            children: Vec::new(),
+            records: Vec::new(),
+            is_leaf: false,
+            next: None,
         }
     }
 }
 
-#[derive(Debug)]
-struct Cursor<'a> {
-    table: &'a mut Table,
-    page_num: usize,
-    cell_num: usize,
-    end_of_table: bool,
+struct BPlusTree {
+    root: Node,
 }
 
-impl<'a> Cursor<'a> {
-    fn advance(&mut self) {
-        let page = self.table.pager.get_page(self.page_num).unwrap();
-        let num_cells = u32::from_le_bytes(page[2..6].try_into().unwrap()) as usize;
+impl BPlusTree {
+    fn new() -> Self {
+        BPlusTree {
+            root: Node::new_leaf(),
+        }
+    }
 
-        self.cell_num += 1;
-        if self.cell_num >= num_cells {
-            let next_page = u32::from_le_bytes(page[6..10].try_into().unwrap());
-            if next_page == 0 {
-                self.end_of_table = true;
+    fn insert(&mut self, key: i32, value: String) {
+        let record = Record { key, value };
+        if let Some(split) = Self::insert_rec(&mut self.root, record) {
+            let mut new_root = Node::new_internal();
+            new_root.keys.push(split.key);
+            new_root.children.push(self.root.clone());
+            new_root.children.push(split.node);
+            self.root = new_root;
+        }
+    }
+
+    fn insert_rec(node: &mut Node, record: Record) -> Option<SplitResult> {
+        if node.is_leaf {
+            let pos = node.keys.iter().position(|&k| k >= record.key).unwrap_or(node.keys.len());
+            node.keys.insert(pos, record.key);
+            node.records.insert(pos, record);
+            
+            if node.keys.len() > ORDER - 1 {
+                let split_pos = node.keys.len() / 2;
+                let split_key = node.keys[split_pos];
+                
+                let mut new_node = Node::new_leaf();
+                new_node.keys = node.keys.drain(split_pos..).collect();
+                new_node.records = node.records.drain(split_pos..).collect();
+                new_node.next = node.next.take();
+                node.next = Some(Box::new(new_node.clone()));
+                
+                Some(SplitResult { key: split_key, node: new_node })
             } else {
-                self.page_num = next_page as usize;
-                self.cell_num = 0;
+                None
+            }
+        } else {
+            let pos = node.keys.iter().position(|&k| k > record.key).unwrap_or(node.keys.len());
+            if let Some(split) = Self::insert_rec(&mut node.children[pos], record) {
+                node.keys.insert(pos, split.key);
+                node.children.insert(pos + 1, split.node);
+                
+                if node.keys.len() > ORDER - 1 {
+                    let split_pos = node.keys.len() / 2;
+                    let split_key = node.keys[split_pos];
+                    
+                    let mut new_node = Node::new_internal();
+                    new_node.keys = node.keys.drain(split_pos + 1..).collect();
+                    new_node.children = node.children.drain(split_pos + 1..).collect();
+                    
+                    Some(SplitResult { key: split_key, node: new_node })
+                } else {
+                    None
+                }
+            } else {
+                None
             }
         }
     }
 
-    fn value(&mut self) -> Option<Row> {
-        let page = self.table.pager.get_page(self.page_num).unwrap();
-        let num_cells = u32::from_le_bytes(page[2..6].try_into().unwrap()) as usize;
+    fn search(&self, key: i32) -> Option<String> {
+        let mut current = &self.root;
+        while !current.is_leaf {
+            let pos = current.keys.iter().position(|&k| k > key)
+                .unwrap_or(current.keys.len());
+            current = &current.children[pos];
+        }
+        
+        current.keys.iter()
+            .position(|&k| k == key)
+            .map(|pos| current.records[pos].value.clone())
+    }
 
-        if self.cell_num >= num_cells {
-            None
+    fn delete(&mut self, key: i32) -> bool {
+        Self::delete_rec(&mut self.root, key)
+    }
+
+    fn delete_rec(node: &mut Node, key: i32) -> bool {
+        if node.is_leaf {
+            if let Some(pos) = node.keys.iter().position(|&k| k == key) {
+                node.keys.remove(pos);
+                node.records.remove(pos);
+                true
+            } else {
+                false
+            }
         } else {
-            let cell_offset = LEAF_NODE_HEADER_SIZE + self.cell_num * LEAF_NODE_CELL_SIZE;
-            Some(deserialize_row(&page[cell_offset..cell_offset + ROW_SIZE]))
-        }
-    }
-}
-
-const LEAF_NODE_HEADER_SIZE: usize = 6;
-const LEAF_NODE_CELL_SIZE: usize = ROW_SIZE + 4;
-const LEAF_NODE_MAX_CELLS: usize = (PAGE_SIZE - LEAF_NODE_HEADER_SIZE) / LEAF_NODE_CELL_SIZE;
-
-fn initialize_leaf_node(page: &mut [u8; PAGE_SIZE]) {
-    page[0] = 0;
-    page[1] = 1;
-    page[2..6].copy_from_slice(&0u32.to_le_bytes());
-}
-
-fn serialize_row(row: &Row, destination: &mut [u8]) {
-    let mut dst = io::Cursor::new(destination);
-    dst.write_u32::<LittleEndian>(row.id).unwrap();
-
-    let username_bytes = &row.username[..USERNAME_SIZE];
-    dst.write_all(username_bytes).unwrap();
-
-    let email_bytes = &row.email[..EMAIL_SIZE];
-    dst.write_all(email_bytes).unwrap();
-}
-
-fn deserialize_row(src: &[u8]) -> Row {
-    let mut cursor = io::Cursor::new(src);
-    let mut username = [0u8; USERNAME_SIZE + 1];
-    let mut email = [0u8; EMAIL_SIZE + 1];
-
-    let id = cursor.read_u32::<LittleEndian>().unwrap();
-    cursor.read_exact(&mut username[..USERNAME_SIZE]).unwrap();
-    cursor.read_exact(&mut email[..EMAIL_SIZE]).unwrap();
-
-    Row {
-        id,
-        username,
-        email,
-    }
-}
-
-fn execute_insert(statement: &Statement, table: &mut Table) -> ExecuteResult {
-    let row = &statement.row_to_insert;
-    let key_to_insert = row.id;
-
-    let mut cursor = table.find(key_to_insert);
-    let page = cursor.table.pager.get_page(cursor.page_num).unwrap();
-    let num_cells = u32::from_le_bytes(page[2..6].try_into().unwrap()) as usize;
-
-    if cursor.cell_num < num_cells {
-        let key_at_index = u32::from_le_bytes(
-            page[LEAF_NODE_HEADER_SIZE + cursor.cell_num * LEAF_NODE_CELL_SIZE..]
-                [..4]
-                .try_into()
-                .unwrap(),
-        );
-        if key_at_index == key_to_insert {
-            return ExecuteResult::DuplicateKey;
+            let pos = node.keys.iter().position(|&k| k > key)
+                .unwrap_or(node.keys.len());
+            Self::delete_rec(&mut node.children[pos], key)
         }
     }
 
-    if num_cells >= LEAF_NODE_MAX_CELLS {
-        return ExecuteResult::TableFull;
-    }
-
-    let cell_offset = LEAF_NODE_HEADER_SIZE + cursor.cell_num * LEAF_NODE_CELL_SIZE;
-
-    for i in (cursor.cell_num..num_cells).rev() {
-        let src_offset = LEAF_NODE_HEADER_SIZE + i * LEAF_NODE_CELL_SIZE;
-        let dst_offset = LEAF_NODE_HEADER_SIZE + (i + 1) * LEAF_NODE_CELL_SIZE;
-        page.copy_within(src_offset..src_offset + LEAF_NODE_CELL_SIZE, dst_offset);
-    }
-
-    let mut cell_data = [0u8; ROW_SIZE];
-    serialize_row(row, &mut cell_data);
-    page[cell_offset..cell_offset + ROW_SIZE].copy_from_slice(&cell_data);
-
-    let new_num_cells = (num_cells + 1).to_le_bytes();
-    page[2..6].copy_from_slice(&new_num_cells);
-
-    ExecuteResult::Success
-}
-
-fn execute_select(table: &mut Table) -> ExecuteResult {
-    let mut cursor = table.start();
-
-    while !cursor.end_of_table {
-        if let Some(row) = cursor.value() {
-            println!(
-                "({}, {}, {})",
-                row.id,
-                std::str::from_utf8(&row.username[..USERNAME_SIZE]).unwrap(),
-                std::str::from_utf8(&row.email[..EMAIL_SIZE]).unwrap()
-            );
+    // New method to get all records
+    fn get_all_records(&self) -> Vec<Record> {
+        let mut records = Vec::new();
+        let mut current = &self.root;
+        
+        // Find leftmost leaf
+        while !current.is_leaf {
+            current = &current.children[0];
         }
-        cursor.advance();
-    }
 
-    ExecuteResult::Success
+        // Collect all records from linked leaves
+        loop {
+            records.extend(current.records.clone());
+            if let Some(next_node) = &current.next {
+                current = next_node;
+            } else {
+                break;
+            }
+        }
+        
+        records
+    }
 }
 
-fn execute_delete(statement: &Statement, table: &mut Table) -> ExecuteResult {
-    let key_to_delete = statement.row_id_to_delete;
-
-    let mut cursor = table.find(key_to_delete);
-    let page = cursor.table.pager.get_page(cursor.page_num).unwrap();
-    let num_cells = u32::from_le_bytes(page[2..6].try_into().unwrap()) as usize;
-
-    if cursor.cell_num >= num_cells {
-        return ExecuteResult::NotFound;
-    }
-
-    let key_at_index = u32::from_le_bytes(
-        page[LEAF_NODE_HEADER_SIZE + cursor.cell_num * LEAF_NODE_CELL_SIZE..]
-            [..4]
-            .try_into()
-            .unwrap(),
-    );
-    if key_at_index != key_to_delete {
-        return ExecuteResult::NotFound;
-    }
-
-    for i in cursor.cell_num..num_cells - 1 {
-        let src_offset = LEAF_NODE_HEADER_SIZE + (i + 1) * LEAF_NODE_CELL_SIZE;
-        let dst_offset = LEAF_NODE_HEADER_SIZE + i * LEAF_NODE_CELL_SIZE;
-        page.copy_within(src_offset..src_offset + LEAF_NODE_CELL_SIZE, dst_offset);
-    }
-
-    let new_num_cells = (num_cells - 1).to_le_bytes();
-    page[2..6].copy_from_slice(&new_num_cells);
-
-    ExecuteResult::Success
+struct SplitResult {
+    key: i32,
+    node: Node,
 }
 
-fn prepare_insert(input: &str) -> Result<Statement, PrepareResult> {
-    let parts: Vec<&str> = input.split_whitespace().collect();
-    if parts.len() != 4 {
-        return Err(PrepareResult::SyntaxError);
-    }
-
-    let id = parts[1].parse::<u32>().map_err(|_| PrepareResult::SyntaxError)?;
-    let username = parts[2].as_bytes();
-    let email = parts[3].as_bytes();
-
-    if username.len() > USERNAME_SIZE || email.len() > EMAIL_SIZE {
-        return Err(PrepareResult::StringTooLong);
-    }
-
-    let mut row = Row {
-        id,
-        username: [0; USERNAME_SIZE + 1],
-        email: [0; EMAIL_SIZE + 1],
-    };
-    row.username[..username.len()].copy_from_slice(username);
-    row.email[..email.len()].copy_from_slice(email);
-
-    Ok(Statement {
-        stype: StatementType::Insert,
-        row_to_insert: row,
-        row_id_to_delete: 0,
-    })
-}
-
-fn prepare_delete(input: &str) -> Result<Statement, PrepareResult> {
-    let parts: Vec<&str> = input.split_whitespace().collect();
-    if parts.len() != 2 {
-        return Err(PrepareResult::SyntaxError);
-    }
-
-    let id = parts[1].parse::<u32>().map_err(|_| PrepareResult::SyntaxError)?;
-
-    Ok(Statement {
-        stype: StatementType::Delete,
-        row_to_insert: Row {
-            id: 0,
-            username: [0; USERNAME_SIZE + 1],
-            email: [0; EMAIL_SIZE + 1],
-        },
-        row_id_to_delete: id,
-    })
-}
-
-fn main() -> io::Result<()> {
-    let mut table = Table::new("mydb.db")?;
+fn main() {
+    let mut tree = BPlusTree::new();
+    println!("B+ Tree Database (Order {})", ORDER);
+    println!("Commands:");
+    println!("  insert <key> <value>  - Insert a new record");
+    println!("  select                - List all records");
+    println!("  select <key>          - Find specific record");
+    println!("  delete <key>          - Delete a record");
+    println!("  exit                  - Quit the program");
 
     loop {
-        print!("db > ");
-        io::stdout().flush()?;
-
         let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        let input = input.trim();
+        io::stdin().read_line(&mut input).unwrap();
+        let parts: Vec<&str> = input.trim().split_whitespace().collect();
 
-        match input {
-            ".exit" => break,
-            "select" => {
-                let result = execute_select(&mut table);
-                match result {
-                    ExecuteResult::Success => println!("Executed successfully"),
-                    _ => println!("Error executing SELECT"),
+        match parts.as_slice() {
+            ["insert", key, value] => {
+                if let Ok(key) = key.parse::<i32>() {
+                    tree.insert(key, value.to_string());
+                    println!("Inserted: {} => {}", key, value);
                 }
             }
-            _ if input.starts_with("insert") => {
-                match prepare_insert(input) {
-                    Ok(statement) => {
-                        let result = execute_insert(&statement, &mut table);
-                        match result {
-                            ExecuteResult::Success => println!("Executed successfully"),
-                            ExecuteResult::DuplicateKey => println!("Error: Duplicate key"),
-                            ExecuteResult::TableFull => println!("Error: Table full"),
-                            _ => println!("Error executing INSERT"),
-                        }
+            ["select"] => {  // New case for showing all records
+                let records = tree.get_all_records();
+                if records.is_empty() {
+                    println!("No records found");
+                } else {
+                    println!("All records:");
+                    for record in records {
+                        println!("- {} => {}", record.key, record.value);
                     }
-                    Err(err) => match err {
-                        PrepareResult::SyntaxError => println!("Syntax error"),
-                        PrepareResult::StringTooLong => println!("String too long"),
-                        _ => println!("Preparation error"),
-                    },
                 }
             }
-            _ if input.starts_with("delete") => {
-                match prepare_delete(input) {
-                    Ok(statement) => {
-                        let result = execute_delete(&statement, &mut table);
-                        match result {
-                            ExecuteResult::Success => println!("Executed successfully"),
-                            ExecuteResult::NotFound => println!("Error: Key not found"),
-                            _ => println!("Error executing DELETE"),
-                        }
+            ["select", key] => {
+                if let Ok(key) = key.parse::<i32>() {
+                    if let Some(value) = tree.search(key) {
+                        println!("Found: {} => {}", key, value);
+                    } else {
+                        println!("Key {} not found", key);
                     }
-                    Err(err) => match err {
-                        PrepareResult::SyntaxError => println!("Syntax error"),
-                        _ => println!("Preparation error"),
-                    },
                 }
             }
-            _ => println!("Unrecognized command"),
+            ["delete", key] => {
+                if let Ok(key) = key.parse::<i32>() {
+                    if tree.delete(key) {
+                        println!("Deleted key {}", key);
+                    } else {
+                        println!("Key {} not found", key);
+                    }
+                }
+            }
+            ["exit"] => break,
+            _ => println!("Invalid command"),
         }
     }
-
-    for page_num in 0..TABLE_MAX_PAGES {
-        table.pager.flush_page(page_num)?;
-    }
-
-    Ok(())
 }
