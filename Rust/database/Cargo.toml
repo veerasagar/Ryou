@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 byteorder = "1.4.3"
-rusqlite = "0.31.0"
+rusqlite = "0.26.2"

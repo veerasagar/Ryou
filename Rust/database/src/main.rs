@@ -1,8 +1,8 @@
-use rusqlite::{Connection, params, Result};
-use std::io;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read, Write};
 use std::path::Path;
 
-const ORDER: usize = 4;
+const ORDER: usize = 4; // B+ tree order
 
 #[derive(Debug, Clone)]
 struct Record {
@@ -43,66 +43,57 @@ impl Node {
 
 struct BPlusTree {
     root: Node,
-    conn: Connection,
+    file_path: String, // Path to the .db file
 }
 
 impl BPlusTree {
-    fn new(db_name: &str) -> Result<Self> {
-        let filename = if db_name.ends_with(".db") {
-            db_name.to_string()
-        } else {
-            format!("{}.db", db_name)
-        };
-
-        let conn = Connection::open(&filename)?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS records (
-                key INTEGER PRIMARY KEY,
-                value TEXT NOT NULL
-            )",
-            [],
-        )?;
-
+    fn new(file_path: &str) -> io::Result<Self> {
         let mut tree = BPlusTree {
             root: Node::new_leaf(),
-            conn,
+            file_path: file_path.to_string(),
         };
-        tree.load_records()?;
 
-        println!("Using database: {}", filename);
+        // Load existing records if file exists
+        if Path::new(file_path).exists() {
+            tree.load_records()?;
+        }
+
         Ok(tree)
     }
 
-    fn load_records(&mut self) -> Result<()> {
-        // First collect all records using a separate scope
-        let records: Vec<Record> = {
-            let mut stmt = self.conn.prepare("SELECT key, value FROM records")?;
-            let rows = stmt.query_map([], |row| {
-                Ok(Record {
-                    key: row.get(0)?,
-                    value: row.get(1)?,
-                })
-            })?;
-            
-            // Collect while the statement is still in scope
-            rows.collect::<Result<Vec<_>>>()?
-        };
-    
-        // Now insert with the connection available
-        for record in records {
-            self.insert(record.key, record.value)?;
+    fn load_records(&mut self) -> io::Result<()> {
+        let mut file = File::open(&self.file_path)?;
+        let mut data = String::new();
+        file.read_to_string(&mut data)?;
+
+        for line in data.lines() {
+            let parts: Vec<&str> = line.split(',').collect();
+            if parts.len() == 2 {
+                let key = parts[0].parse::<i32>().unwrap();
+                let value = parts[1].to_string();
+                self.insert(key, value)?;
+            }
         }
-    
+
         Ok(())
     }
 
-    fn insert(&mut self, key: i32, value: String) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO records (key, value) VALUES (?1, ?2)",
-            params![key, value],
-        )?;
+    fn save_records(&self) -> io::Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(&self.file_path)?;
 
+        let records = self.get_all_records();
+        for record in records {
+            writeln!(file, "{},{}", record.key, record.value)?;
+        }
+
+        Ok(())
+    }
+
+    fn insert(&mut self, key: i32, value: String) -> io::Result<()> {
         let record = Record { key, value };
         if let Some(split) = Self::insert_rec(&mut self.root, record) {
             let mut new_root = Node::new_internal();
@@ -111,6 +102,9 @@ impl BPlusTree {
             new_root.children.push(split.node);
             self.root = new_root;
         }
+
+        // Save changes to the .db file
+        self.save_records()?;
 
         Ok(())
     }
@@ -172,13 +166,15 @@ impl BPlusTree {
             .map(|pos| current.records[pos].value.clone())
     }
 
-    fn delete(&mut self, key: i32) -> Result<bool> {
-        self.conn.execute(
-            "DELETE FROM records WHERE key = ?1",
-            params![key],
-        )?;
+    fn delete(&mut self, key: i32) -> io::Result<bool> {
+        let deleted = Self::delete_rec(&mut self.root, key);
 
-        Ok(Self::delete_rec(&mut self.root, key))
+        // Save changes to the .db file
+        if deleted {
+            self.save_records()?;
+        }
+
+        Ok(deleted)
     }
 
     fn delete_rec(node: &mut Node, key: i32) -> bool {
@@ -201,10 +197,12 @@ impl BPlusTree {
         let mut records = Vec::new();
         let mut current = &self.root;
 
+        // Find leftmost leaf
         while !current.is_leaf {
             current = &current.children[0];
         }
 
+        // Collect all records from linked leaves
         loop {
             records.extend(current.records.clone());
             if let Some(next_node) = &current.next {
@@ -218,30 +216,33 @@ impl BPlusTree {
     }
 }
 
+// Define the SplitResult struct
 struct SplitResult {
     key: i32,
     node: Node,
 }
 
-fn main() -> Result<()> {
-    println!("B+ Tree Database (Order {})", ORDER);
-    println!("Enter database name (new or existing):");
-
+fn main() -> io::Result<()> {
+    // Get database name from user
+    println!("Enter database name:");
     let mut db_name = String::new();
-    io::stdin().read_line(&mut db_name).unwrap();
+    io::stdin().read_line(&mut db_name)?;
     let db_name = db_name.trim();
+    let file_path = format!("{}.db", db_name);
 
-    let mut tree = BPlusTree::new(db_name)?;
-
-    println!("\nAvailable commands:");
+    // Initialize B+ Tree with specified database
+    let mut tree = BPlusTree::new(&file_path)?;
+    println!("Using database: {}", file_path);
+    println!("B+ Tree Database (Order {})", ORDER);
+    println!("Commands:");
     println!("  insert <key> <value>  - Insert a new record");
     println!("  select                - List all records");
     println!("  select <key>          - Find specific record");
     println!("  delete <key>          - Delete a record");
     println!("  exit                  - Quit the program");
 
+    // Command loop
     loop {
-        println!("\nEnter command:");
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
         let parts: Vec<&str> = input.trim().split_whitespace().collect();
