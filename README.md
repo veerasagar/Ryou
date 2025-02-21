@@ -42,13 +42,13 @@ db > .exit
 
 To run
 
-```
+```rust
 cd Rust\database
 cargo build
 cargo run
 ```
 
-```
+```text
 Enter database name:
 mydatabase
 Using database: mydatabase.db
@@ -65,6 +65,6 @@ Commands:
 
 To run
 
-```
+```bash
 ./run.sh
 ```
