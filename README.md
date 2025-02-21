@@ -37,6 +37,7 @@ To exit
 ```
 db > .exit
 ```
+
 ## Using Rust
 
 To run
@@ -58,4 +59,12 @@ Commands:
   select <key>          - Find specific record
   delete <key>          - Delete a record
   exit                  - Quit the program
+```
+
+## For Linux users
+
+To run
+
+```
+./run.sh
 ```
