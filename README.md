@@ -69,4 +69,4 @@ To run
 ./run.sh
 ```
 
-![Alt text](static\img.png)
+![Alt text](https://github.com/veerasagar/Ryou/blob/main/static/img.png)
