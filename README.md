@@ -68,3 +68,5 @@ To run
 ```bash
 ./run.sh
 ```
+
+![Alt text](static\img.png)
