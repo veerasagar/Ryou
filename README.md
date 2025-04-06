@@ -4,37 +4,37 @@
 
 To run database
 
-```
+```c
 gcc db.c
 ```
 
 To start database
 
-```
+```c
 ./a.out test.db
 ```
 
 To insert
 
-```
+```c
 db > insert 1 test test@test.com
 ```
 
 To select
 
-```
+```c
 db > select
 ```
 
 To delete
 
-```
+```c
 db > delete 1
 ```
 
 To exit
 
-```
+```c
 db > .exit
 ```
 
