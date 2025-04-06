@@ -270,7 +270,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>B+ Tree Database Interface</h1>
+        <h1>Ryou: Simple Database implementation</h1>
         
         <!-- display flash messages -->
         {% with messages = get_flashed_messages() %}
@@ -287,7 +287,6 @@
             <div class="tab active">Database Operations</div>
         </div>
         
-        <!-- form to insert a new record -->
         <div class="card">
             <h2>Insert Record</h2>
             <form action="{{ url_for('insert') }}" method="post">
@@ -305,7 +304,6 @@
             </form>
         </div>
         
-        <!-- form to search for a record by key -->
         <div class="card">
             <h2>Search Record</h2>
             <form action="{{ url_for('search') }}" method="get">
@@ -318,7 +316,6 @@
             </form>
         </div>
         
-        <!-- button to show all records -->
         <div class="card">
             <h2>Display Records</h2>
             <form action="{{ url_for('all_records') }}" method="get">
@@ -326,7 +323,6 @@
             </form>
         </div>
         
-        <!-- section for search result (conditionally rendered) -->
         {% if search_result %}
         <div class="card">
             <h2>Search Result</h2>
@@ -339,7 +335,6 @@
         </div>
         {% endif %}
         
-        <!-- section for displaying all records (conditionally rendered) -->
         {% if all_records %}
         <div class="card">
             <h2>All Records</h2>
@@ -380,7 +375,7 @@
     </div>
 
     <script>
-        // Simple toggle for the tabs (just visual, doesn't affect functionality)
+        
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', function() {
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
