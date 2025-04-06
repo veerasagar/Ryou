@@ -3,7 +3,13 @@ import os
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
-DB_FILE = 'Rust\database\hi.db'
+DB_FILE = [f for f in os.listdir('.') if f.endswith('.db')]
+
+if DB_FILE:
+    DB_FILE = DB_FILE[0]  # Use the first found database file
+    print(f"Using database file: {DB_FILE}")
+else:
+    raise FileNotFoundError("No database file (.db) found in the current directory.")
 
 def get_all_records():
     records = []
