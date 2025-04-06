@@ -3,15 +3,7 @@ import os
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
-
-# Database file – this is analogous to your Rust .db file.
-DB_FILE = [f for f in os.listdir('.') if f.endswith('.db')]
-
-if DB_FILE:
-    DB_FILE = DB_FILE[0]  # Use the first found database file
-    print(f"Using database file: {DB_FILE}")
-else:
-    raise FileNotFoundError("No database file (.db) found in the current directory.")
+DB_FILE = 'Rust\database\hi.db'
 
 def get_all_records():
     records = []
@@ -20,7 +12,6 @@ def get_all_records():
             for line in f:
                 parts = line.strip().split(',')
                 if len(parts) == 2:
-                    # Store key as integer and value as string
                     try:
                         records.append({'key': int(parts[0]), 'value': parts[1]})
                     except ValueError:
@@ -28,7 +19,6 @@ def get_all_records():
     return records
 
 def save_record(key, value):
-    # Append a new record to the database file.
     with open(DB_FILE, 'a') as f:
         f.write(f"{key},{value}\n")
 
@@ -38,16 +28,21 @@ def delete_record(key):
     records = get_all_records()
     new_records = [r for r in records if r['key'] != key]
     if len(new_records) == len(records):
-        return False  # key not found
+        return False
     with open(DB_FILE, 'w') as f:
         for r in new_records:
             f.write(f"{r['key']},{r['value']}\n")
     return True
 
+def get_record(key):
+    for record in get_all_records():
+        if record['key'] == key:
+            return record
+    return None
+
 @app.route('/')
 def index():
-    records = get_all_records()
-    return render_template('index.html', records=records)
+    return render_template('index.html')
 
 @app.route('/insert', methods=['POST'])
 def insert():
@@ -72,6 +67,28 @@ def delete(key):
     else:
         flash(f"Record with key {key} not found.")
     return redirect(url_for('index'))
+
+@app.route('/search', methods=['GET'])
+def search():
+    key = request.args.get('key')
+    if key:
+        try:
+            key_int = int(key)
+        except ValueError:
+            flash("Key must be an integer.")
+            return redirect(url_for('index'))
+        record = get_record(key_int)
+        if record:
+            return render_template('index.html', search_result=record)
+        else:
+            flash(f"Record with key {key_int} not found.")
+            return redirect(url_for('index'))
+    return redirect(url_for('index'))
+
+@app.route('/all', methods=['GET'])
+def all_records():
+    records = get_all_records()
+    return render_template('index.html', all_records=records)
 
 if __name__ == '__main__':
     app.run(debug=True)
