@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RYOU: B+ Tree Database</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Press Start 2P', cursive;
+      background-color: #1e1e2e;
+      color: #f2f2f2;
+      padding: 1rem;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 1rem;
+      background: #2c2c3a;
+      border: 4px solid #555;
+      box-shadow: 0 0 0 4px #fff, 0 0 0 8px #000;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .icons {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      color: #0ff;
+    }
+
+    h2 {
+      font-size: 0.75rem;
+      color: #ff0;
+    }
+
+    h3 {
+      font-size: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .panel {
+      background: #3e3e50;
+      border: 2px solid #888;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .panel.full {
+      flex: 1 1 100%;
+    }
+
+    .panel input {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-family: 'Press Start 2P', cursive;
+      font-size: 0.6rem;
+      background: #222;
+      border: 2px solid #777;
+      color: #0ff;
+    }
+
+    .btn {
+      display: inline-block;
+      font-family: 'Press Start 2P', cursive;
+      font-size: 0.6rem;
+      padding: 0.5rem 1rem;
+      background-color: #0ff;
+      color: #000;
+      border: 2px solid #fff;
+      cursor: pointer;
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+
+    .btn:hover {
+      background-color: #00cccc;
+    }
+
+    .btn.delete {
+      background-color: #f33;
+      color: #fff;
+    }
+
+    .btn.delete:hover {
+      background-color: #c00;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.6rem;
+      margin-top: 0.5rem;
+    }
+
+    th, td {
+      border: 2px solid #666;
+      padding: 0.5rem;
+      text-align: left;
+    }
+
+    .error {
+      color: #ff4d4d;
+      font-size: 0.6rem;
+      background: #440000;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      border: 2px solid #f00;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 0.5rem;
+      margin-top: 2rem;
+      color: #aaa;
+    }
+
+    @media (max-width: 768px) {
+      .form-grid {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="icons">
+        <span class="icon">❤️</span>
+        <span class="icon">🌲</span>
+        <span class="icon">💎</span>
+      </div>
+      <h1>RYOU:</h1>
+      <h2>SIMPLE B+ TREE DATABASE</h2>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <section class="panel">
+          <div class="error">
+            {% for message in messages %}
+              {{ message }}<br>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    {% endwith %}
+
+    <section class="panel">
+      <h3>DATABASE OPERATIONS</h3>
+    </section>
+
+    <div class="form-grid">
+      <section class="panel">
+        <h3>INSERT RECORD</h3>
+        <form action="{{ url_for('insert') }}" method="post">
+          <label>Key (integer):</label>
+          <input type="text" name="key" placeholder="Enter key" required>
+          <label>Value:</label>
+          <input type="text" name="value" placeholder="Enter value" required>
+          <button type="submit" class="btn insert">INSERT</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h3>SEARCH RECORD</h3>
+        <form action="{{ url_for('search') }}" method="get">
+          <label>Key (integer):</label>
+          <input type="text" name="key" placeholder="Enter key" required>
+          <button type="submit" class="btn search">SEARCH</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="form-grid">
+      <section class="panel full">
+        <h3>ALL RECORDS</h3>
+        <form action="{{ url_for('all_records') }}" method="get">
+          <button type="submit" class="btn all">ALL RECORDS</button>
+        </form>
+      </section>
+
+      {% if all_records %}
+      <section class="panel full">
+        <h3>DISPLAY RECORDS</h3>
+        <table>
+          <thead>
+            <tr><th>Key</th><th>Value</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for record in all_records %}
+            <tr>
+              <td>{{ record.key }}</td>
+              <td>{{ record.value }}</td>
+              <td>
+                <form action="{{ url_for('delete', key=record.key) }}" method="post" style="display:inline;">
+                  <button type="submit" class="btn delete">DELETE</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endif %}
+
+      {% if search_result %}
+      <section class="panel full">
+        <h3>SEARCH RESULT</h3>
+        <p><strong>Key:</strong> {{ search_result.key }}<br>
+           <strong>Value:</strong> {{ search_result.value }}</p>
+      </section>
+      {% endif %}
+    </div>
+
+    <footer>B+ Tree Database Interface • Pixel Art Edition</footer>
+  </div>
+</body>
+</html>
