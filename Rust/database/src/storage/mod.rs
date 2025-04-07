@@ -2,7 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::Path;
 
-use crate::bptree::Record;
+use crate::btree::Record;
 
 pub fn load_records(file_path: &str) -> io::Result<Vec<Record>> {
     let mut records = Vec::new();

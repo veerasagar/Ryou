@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B-Tree Database Manager</title>
+    <style>
+        :root {
+            --primary: #3498db;
+            --primary-dark: #2980b9;
+            --secondary: #2ecc71;
+            --secondary-dark: #27ae60;
+            --danger: #e74c3c;
+            --danger-dark: #c0392b;
+            --text: #333;
+            --light-bg: #f5f5f5;
+            --border: #ddd;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--light-bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .db-select {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 10px 15px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: var(--primary-dark);
+        }
+        
+        .btn-success {
+            background: var(--secondary);
+        }
+        
+        .btn-success:hover {
+            background: var(--secondary-dark);
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+        }
+        
+        .btn-danger:hover {
+            background: var(--danger-dark);
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .operations {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        
+        .panel {
+            flex: 1;
+            margin: 0 10px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+        }
+        
+        .results {
+            margin-top: 20px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+            padding: 15px;
+        }
+        
+        .results-title {
+            margin-bottom: 10px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .records {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .record {
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .record:last-child {
+            border-bottom: none;
+        }
+        
+        .record:hover {
+            background: rgba(0, 0, 0, 0.03);
+        }
+        
+        .record-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .record-btn {
+            padding: 3px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 3px;
+            background: var(--primary);
+            color: white;
+            border: none;
+        }
+        
+        .record-btn-delete {
+            background: var(--danger);
+        }
+        
+        .log {
+            background: #333;
+            color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-family: monospace;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            line-height: 1.4;
+        }
+        
+        .log-entry.success {
+            color: #2ecc71;
+        }
+        
+        .log-entry.error {
+            color: #e74c3c;
+        }
+        
+        @media (max-width: 768px) {
+            .operations {
+                flex-direction: column;
+            }
+            
+            .panel {
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Simple Database Engine</h1>
+            <div class="subtitle">Using B-Tree Data structure (Order 4)</div>
+        </header>
+        
+        <div class="content">
+            <div class="db-select">
+                <div class="form-group">
+                    <label for="db-name">Database Name:</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="db-name" placeholder="Enter database name">
+                        <button id="connect-db" class="btn">Connect</button>
+                    </div>
+                </div>
+                <div id="connection-status">Not connected to any database.</div>
+            </div>
+            
+            <div class="actions">
+                <button id="view-all" class="btn">View All Records</button>
+                <button id="insert-mode" class="btn btn-success">Insert Record</button>
+                <button id="find-mode" class="btn">Find Record</button>
+            </div>
+            
+            <div class="operations">
+                <!-- Insert Panel -->
+                <div id="insert-panel" class="panel" style="display: none;">
+                    <h3>Insert Record</h3>
+                    <div class="form-group">
+                        <label for="insert-key">Key (Integer):</label>
+                        <input type="number" id="insert-key" placeholder="Enter key">
+                    </div>
+                    <div class="form-group">
+                        <label for="insert-value">Value:</label>
+                        <input type="text" id="insert-value" placeholder="Enter value">
+                    </div>
+                    <button id="insert-submit" class="btn btn-success">Insert</button>
+                </div>
+                
+                <!-- Find Panel -->
+                <div id="find-panel" class="panel" style="display: none;">
+                    <h3>Find Record</h3>
+                    <div class="form-group">
+                        <label for="find-key">Key (Integer):</label>
+                        <input type="number" id="find-key" placeholder="Enter key">
+                    </div>
+                    <button id="find-submit" class="btn">Find</button>
+                </div>
+            </div>
+            
+            <div class="results">
+                <div class="results-title">
+                    <span id="results-header">Records</span>
+                    <span id="record-count"></span>
+                </div>
+                <div id="records" class="records">
+                    <div class="record-empty">No records to display. Connect to a database first.</div>
+                </div>
+            </div>
+            
+            <div class="log" id="log">
+                <div class="log-entry">System initialized. Ready to connect to database.</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        class BTreeDatabase {
+            constructor() {
+                this.dbName = '';
+                this.connected = false;
+                this.apiBaseUrl = '/api'; // API endpoint base URL
+            }
+            
+            // Connect to a database
+            async connect(dbName) {
+                this.dbName = dbName;
+                try {
+                    const response = await fetch(`${this.apiBaseUrl}/connect`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ db_name: dbName })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        this.connected = true;
+                        return { success: true, message: data.message };
+                    } else {
+                        throw new Error(data.message);
+                    }
+                } catch (error) {
+                    return { success: false, message: `Failed to connect: ${error.message}` };
+                }
+            }
+            
+            // Get all records from the database
+            async getAllRecords() {
+                if (!this.connected) {
+                    throw new Error("Not connected to a database");
+                }
+                const response = await fetch(`${this.apiBaseUrl}/db/${this.dbName}/records`);
+                const data = await response.json();
+                if (data.success) {
+                    return data.data || [];
+                } else {
+                    throw new Error(data.message);
+                }
+            }
+            
+            // Find a specific record by key
+            async findRecord(key) {
+                if (!this.connected) {
+                    throw new Error("Not connected to a database");
+                }
+                const response = await fetch(`${this.apiBaseUrl}/db/${this.dbName}/records/${key}`);
+                const data = await response.json();
+                if (data.success) {
+                    return data.data[0];
+                } else {
+                    throw new Error(data.message);
+                }
+            }
+            
+            // Insert or update a record
+            async insertRecord(key, value) {
+                if (!this.connected) {
+                    throw new Error("Not connected to a database");
+                }
+                const response = await fetch(`${this.apiBaseUrl}/db/${this.dbName}/records`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ key, value })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    return { success: true, message: data.message };
+                } else {
+                    throw new Error(data.message);
+                }
+            }
+            
+            // Delete a record
+            async deleteRecord(key) {
+                if (!this.connected) {
+                    throw new Error("Not connected to a database");
+                }
+                const response = await fetch(`${this.apiBaseUrl}/db/${this.dbName}/records/${key}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    return { success: true, message: data.message };
+                } else {
+                    throw new Error(data.message);
+                }
+            }
+        }
+
+        // UI Controller
+        class UIController {
+            constructor() {
+                this.db = new BTreeDatabase();
+                // DOM elements
+                this.dbNameInput = document.getElementById('db-name');
+                this.connectBtn = document.getElementById('connect-db');
+                this.connectionStatus = document.getElementById('connection-status');
+                this.viewAllBtn = document.getElementById('view-all');
+                this.insertModeBtn = document.getElementById('insert-mode');
+                this.findModeBtn = document.getElementById('find-mode');
+                this.insertPanel = document.getElementById('insert-panel');
+                this.findPanel = document.getElementById('find-panel');
+                this.insertKeyInput = document.getElementById('insert-key');
+                this.insertValueInput = document.getElementById('insert-value');
+                this.insertSubmitBtn = document.getElementById('insert-submit');
+                this.findKeyInput = document.getElementById('find-key');
+                this.findSubmitBtn = document.getElementById('find-submit');
+                this.recordsContainer = document.getElementById('records');
+                this.resultsHeader = document.getElementById('results-header');
+                this.recordCount = document.getElementById('record-count');
+                this.logContainer = document.getElementById('log');
+                
+                this.setupEventListeners();
+            }
+            
+            setupEventListeners() {
+                // Database connection
+                this.connectBtn.addEventListener('click', () => this.connectToDatabase());
+                this.dbNameInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.connectToDatabase();
+                });
+                
+                // Mode switching
+                this.viewAllBtn.addEventListener('click', () => this.showAllRecords());
+                this.insertModeBtn.addEventListener('click', () => this.showPanel('insert'));
+                this.findModeBtn.addEventListener('click', () => this.showPanel('find'));
+                
+                // Form submissions
+                this.insertSubmitBtn.addEventListener('click', () => this.insertRecord());
+                this.findSubmitBtn.addEventListener('click', () => this.findRecord());
+                
+                this.insertKeyInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.insertValueInput.focus();
+                });
+                
+                this.insertValueInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.insertRecord();
+                });
+                
+                this.findKeyInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.findRecord();
+                });
+            }
+            
+            async connectToDatabase() {
+                const dbName = this.dbNameInput.value.trim();
+                if (!dbName) {
+                    this.showLog('Please enter a database name', 'error');
+                    return;
+                }
+                try {
+                    this.showLog(`Connecting to ${dbName}.db...`);
+                    const result = await this.db.connect(dbName);
+                    this.connectionStatus.textContent = `Connected to: ${dbName}.db`;
+                    this.showLog(result.message, 'success');
+                    this.showAllRecords();
+                } catch (error) {
+                    this.showLog(`Connection failed: ${error.message}`, 'error');
+                }
+            }
+            
+            showPanel(panelType) {
+                if (!this.db.connected) {
+                    this.showLog('Please connect to a database first', 'error');
+                    return;
+                }
+                // Hide all panels
+                this.insertPanel.style.display = 'none';
+                this.findPanel.style.display = 'none';
+                
+                // Show selected panel
+                if (panelType === 'insert') {
+                    this.insertPanel.style.display = 'block';
+                    this.insertKeyInput.focus();
+                } else if (panelType === 'find') {
+                    this.findPanel.style.display = 'block';
+                    this.findKeyInput.focus();
+                }
+            }
+            
+            async showAllRecords() {
+                if (!this.db.connected) {
+                    this.showLog('Please connect to a database first', 'error');
+                    return;
+                }
+                try {
+                    const records = await this.db.getAllRecords();
+                    this.renderRecords(records);
+                    this.resultsHeader.textContent = 'All Records';
+                    this.recordCount.textContent = `(${records.length} records)`;
+                    this.showLog(`Loaded ${records.length} records`, 'success');
+                } catch (error) {
+                    this.showLog(`Failed to load records: ${error.message}`, 'error');
+                }
+            }
+            
+            async insertRecord() {
+                const key = parseInt(this.insertKeyInput.value);
+                const value = this.insertValueInput.value.trim();
+                if (isNaN(key)) {
+                    this.showLog('Key must be a valid integer', 'error');
+                    return;
+                }
+                if (!value) {
+                    this.showLog('Value cannot be empty', 'error');
+                    return;
+                }
+                try {
+                    const result = await this.db.insertRecord(key, value);
+                    this.showLog(result.message, 'success');
+                    this.insertKeyInput.value = '';
+                    this.insertValueInput.value = '';
+                    this.showAllRecords();
+                    this.insertKeyInput.focus();
+                } catch (error) {
+                    this.showLog(`Insert failed: ${error.message}`, 'error');
+                }
+            }
+            
+            async findRecord() {
+                const key = parseInt(this.findKeyInput.value);
+                if (isNaN(key)) {
+                    this.showLog('Key must be a valid integer', 'error');
+                    return;
+                }
+                try {
+                    const record = await this.db.findRecord(key);
+                    this.renderRecords([record]);
+                    this.resultsHeader.textContent = 'Search Results';
+                    this.recordCount.textContent = '(1 record)';
+                    this.showLog(`Found: ${key} => ${record.value}`, 'success');
+                } catch (error) {
+                    this.showLog(`${error.message}`, 'error');
+                    this.renderRecords([]);
+                    this.resultsHeader.textContent = 'Search Results';
+                    this.recordCount.textContent = '(0 records)';
+                }
+            }
+            
+            async deleteRecord(key) {
+                try {
+                    const result = await this.db.deleteRecord(key);
+                    this.showLog(result.message, 'success');
+                    this.showAllRecords();
+                } catch (error) {
+                    this.showLog(`Delete failed: ${error.message}`, 'error');
+                }
+            }
+            
+            renderRecords(records) {
+                this.recordsContainer.innerHTML = '';
+                
+                if (records.length === 0) {
+                    const emptyEl = document.createElement('div');
+                    emptyEl.className = 'record-empty';
+                    emptyEl.textContent = 'No records found';
+                    this.recordsContainer.appendChild(emptyEl);
+                    return;
+                }
+                
+                records.forEach(record => {
+                    const recordEl = document.createElement('div');
+                    recordEl.className = 'record';
+                    
+                    const recordText = document.createElement('span');
+                    recordText.textContent = `${record.key} => ${record.value}`;
+                    
+                    const actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'record-actions';
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'record-btn record-btn-delete';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.addEventListener('click', () => this.deleteRecord(record.key));
+                    
+                    actionsDiv.appendChild(deleteBtn);
+                    recordEl.appendChild(recordText);
+                    recordEl.appendChild(actionsDiv);
+                    
+                    this.recordsContainer.appendChild(recordEl);
+                });
+            }
+            
+            showLog(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry ${type}`;
+                logEntry.textContent = message;
+                this.logContainer.appendChild(logEntry);
+                this.logContainer.scrollTop = this.logContainer.scrollHeight;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const ui = new UIController();
+        });
+    </script>
+</body>
+</html>
