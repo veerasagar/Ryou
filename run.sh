@@ -10,6 +10,8 @@ case $choice in
     1)
         echo "Running in C..."
         cd ./C && gcc db.c
+        read -p "Enter your Database name: " db_name
+        ./a.out $db_name.db
         ;;
     2)
         echo "Running in Rust..."
