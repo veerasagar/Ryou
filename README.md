@@ -46,6 +46,7 @@ To run
 cd Rust\database
 cargo build
 cargo run
+cargo run -- --cli
 ```
 
 ```text
